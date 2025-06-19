@@ -1,0 +1,56 @@
+import json
+import logging
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+class DataProcessor:
+    def __init__(self, processor_id: str):
+        self.processor_id = processor_id
+        self._processed_records = {}
+
+    def process_and_store(self, record_id: str, data_payload: dict,
+                          options: dict = {'encryption': False, 'compression': False}):
+        actual_options = options
+        if actual_options.get('encryption'):
+            data_payload['value'] = f"ENCRYPTED({data_payload.get('value')})"
+        if actual_options.get('compression'):
+            data_payload['value'] = f"COMPRESSED({data_payload.get('value')})"
+        self._processed_records[record_id] = data_payload
+        logging.info(f"[{self.processor_id}] Record {record_id} processed. Options: {json.dumps(actual_options)}")
+
+    def get_processed_record(self, record_id: str) -> dict:
+        return self._processed_records.get(record_id)
+
+if __name__ == "__main__":
+    processor1 = DataProcessor("Processor-Alpha")
+    processor2 = DataProcessor("Processor-Beta")
+
+    processor1.process_and_store(
+        "user_profile_001",
+        {"id": "user_001", "name": "Alice", "value": "Sensitive Data A"}
+    )
+    custom_options_beta = {'encryption': True, 'compression': False}
+    processor2.process_and_store(
+        "device_config_abc",
+        {"id": "device_abc", "type": "sensor", "value": "Critical Config 1"},
+        options=custom_options_beta
+    )
+
+    DataProcessor.process_and_store.__defaults__[-1]['encryption'] = True
+    logging.warning("!!! CRITICAL: Default options for 'process_and_store' have been modified.")
+
+    processor1.process_and_store(
+        "patient_data_xyz",
+        {"id": "patient_xyz", "age": 45, "value": "Medical History Z"}
+    )
+    logging.info(f"Processed patient_data_xyz: {processor1.get_processed_record('patient_data_xyz')}")
+    assert "ENCRYPTED" in processor1.get_processed_record('patient_data_xyz')['value']
+
+    processor2.process_and_store(
+        "server_log_007",
+        {"id": "log_007", "source": "web_server", "value": "Recent Access Logs"}
+    )
+    logging.info(f"Processed server_log_007: {processor2.get_processed_record('server_log_007')}")
+    assert "ENCRYPTED" in processor2.get_processed_record('server_log_007')['value']
+
+    logging.info("Demonstration complete: Data was unexpectedly encrypted due to mutable default argument.")
