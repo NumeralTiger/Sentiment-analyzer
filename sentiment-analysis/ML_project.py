@@ -17,7 +17,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics import classification_report
 import nltk
 
-# first run this
+# # first run this
 # nltk.download('punkt')
 # nltk.download('stopwords')
 # nltk.download('wordnet')
@@ -28,7 +28,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 stop_words = set(stopwords.words('english'))
 lemmatizer = WordNetLemmatizer()
 
-
+#load dataset
 def load_data():
     from kagglehub import KaggleDatasetAdapter
     import kagglehub
@@ -42,30 +42,45 @@ def load_data():
     df['sentiment'] = df['sentiment'].fillna('neutral')
     return df
 
-
+#clean data
 def clean_text(text):
     text = text.lower()
     text = re.sub(r"http\S+|www\S+", "", text)
     text = text.translate(str.maketrans('', '', string.punctuation))
     tokens = word_tokenize(text)
-    tokens = [lemmatizer.lemmatize(w) for w in tokens if w not in stop_words and w.isalpha()]
+    filtered_tokens = []
+    for w in tokens:
+        if w.isalpha() and w not in stop_words:
+            lemma = lemmatizer.lemmatize(w)
+            filtered_tokens.append(lemma)
+    tokens = filtered_tokens
     return " ".join(tokens)
 
 
 def augment_text(text, n=2):
-    """
-    Placeholder for EDA synonym replacement. Ensure wordnet is downloaded.
-    """
+    
+    # this may cause trouble if wordnet is not downloaded.
+
     words = text.split()
     new_words = words.copy()
-    random_word_list = list(set([word for word in words if wordnet.synsets(word)]))
-    random.shuffle(random_word_list)
+    # Find words that have synonyms in WordNet
+    candidate_words = []
+    for word in words:
+        if wordnet.synsets(word):
+            candidate_words.append(word)
+    random.shuffle(candidate_words)
     num_replaced = 0
-    for word in random_word_list:
-        synonyms = wordnet.synsets(word)
-        synonym_words = list(set([lemma.name().replace("_", " ") for syn in synonyms for lemma in syn.lemmas() if lemma.name() != word]))
-        if synonym_words:
-            synonym = random.choice(synonym_words)
+    for word in candidate_words:
+        synonyms = []
+        for syn in wordnet.synsets(word):
+            for lemma in syn.lemmas():
+                lemma_name = lemma.name().replace("_", " ")
+                if lemma_name != word:
+                    synonyms.append(lemma_name)
+        synonyms = list(set(synonyms))
+        if synonyms:
+            synonym = random.choice(synonyms)
+            # Replace all occurrences of the word in new_words
             new_words = [synonym if w == word else w for w in new_words]
             num_replaced += 1
         if num_replaced >= n:
@@ -89,12 +104,26 @@ def train_model(X_train, y_train, model_type='logistic'):
     model = models.get(model_type, LogisticRegression(max_iter=1000))
     pipe = build_pipeline(model)
 
-    param_grid = {
-        'clf__C': [0.1, 1, 10] if model_type == 'logistic' else [1],
-        'clf__solver': ['liblinear', 'lbfgs'] if model_type == 'logistic' else [''],
-        'tfidf__ngram_range': [(1, 1), (1, 2)]
-    }
-    param_grid = {k: v for k, v in param_grid.items() if v != ['']}
+    if model_type == 'logistic':
+        param_grid = {
+            'clf__C': [0.1, 1, 10],
+            'clf__solver': ['liblinear', 'lbfgs'],
+            'tfidf__ngram_range': [(1, 1), (1, 2)]
+        }
+    elif model_type == 'nb':
+        param_grid = {
+            'clf__alpha': [0.5, 1.0],
+            'tfidf__ngram_range': [(1, 1), (1, 2)]
+        }
+    elif model_type == 'svm':
+        param_grid = {
+            'clf__C': [0.1, 1, 10],
+            'tfidf__ngram_range': [(1, 1), (1, 2)]
+        }
+    else:
+        param_grid = {
+            'tfidf__ngram_range': [(1, 1), (1, 2)]
+        }
 
     grid = GridSearchCV(pipe, param_grid, cv=5, scoring='f1_macro', n_jobs=-1)
     grid.fit(X_train, y_train)
@@ -111,22 +140,22 @@ def predict_sentiment(model, texts):
     return model.predict(texts)
 
 
-def main():
+def main(model_type='svm'):
     df = load_data()
     df['clean_text'] = df['text'].apply(clean_text)
 
-    # Optional: augment training data
+    # augment training data for much needed diversity
     df_aug = df.copy()
     df_aug['clean_text'] = df_aug['clean_text'].apply(lambda x: augment_text(x))
     df = pd.concat([df, df_aug], ignore_index=True)
 
     X_train, X_test, y_train, y_test = train_test_split(df['clean_text'], df['sentiment'], test_size=0.2, random_state=42)
-    model = train_model(X_train, y_train, model_type='logistic')
+    model = train_model(X_train, y_train, model_type=model_type)
     evaluate_model(model, X_test, y_test)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model', type=str, default='logistic', choices=['logistic', 'nb', 'svm'], help='Choose model type')
+    parser.add_argument('--model', type=str, default='svm', choices=['logistic', 'nb', 'svm'], help='Choose model type')
     args = parser.parse_args()
-    main()
+    main(model_type=args.model)
