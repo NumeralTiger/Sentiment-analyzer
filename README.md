@@ -4,7 +4,7 @@ An NLP project that classifies text sentiment as positive, neutral, or negative.
 
 ---
 
-## 🎥 Project Demo
+## 🎥 Screenshot
 
 <img width="969" height="390" alt="image" src="https://github.com/user-attachments/assets/5d7128a4-af3d-4358-99d9-bb17536f90e9" />
 
